@@ -1,0 +1,13 @@
+{
+  "name": "buyin-operations-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Buy-in operations: review app for trustee emails and the Excel buy-in log (Databricks App, no dependencies)",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

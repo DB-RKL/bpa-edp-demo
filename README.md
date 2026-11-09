@@ -1,24 +1,22 @@
-# Buy-in operations on Databricks (reference build)
+# Buy-in operations app
 
-A worked example of bringing the data behind a pension buy-in process into Databricks, checking it, joining it with buy-out data, and putting a person in the loop for what can't be settled automatically. **All data is synthetic.** It is a reference build for a demo, not production code.
+A small Databricks App for reviewing trustee emails against an Excel buy-in log. It has no npm dependencies: a Node.js server (`server.js`) using the built-in `http` and `fetch`, and a plain ES-module front end in `public/`. **All the data it was built against is synthetic.**
 
-## The problem it models
-Buy-in activity is tracked in Excel logs on SharePoint. Staff re-key trustee emails into them by hand, planner data sits in Dynamics 365 / Dataverse, and buy-out data lives somewhere else. One bad cell ("approx 120" in a volume column, "TBC" in a date column) can fail a load, and nobody can see the whole journey of a scheme from one place.
+## Pages
+| Page | What it does |
+|---|---|
+| Home | A summary of what is waiting: invalid cells per Excel workbook, emails that disagree with the log, inbound emails to review, and the headline SLA figures |
+| Fix invalid cells | Excel cells that could not be read (for example "approx 120" in a volume column). Each card shows the source email beside what to verify; save a corrected value, or skip |
+| Review emails | Emails whose extracted value disagrees with the log. Accept or reject |
+| Inbound emails | Emails landed from an Outlook mailbox. The model drafts a record, you edit and confirm or reject it. Attachments can be viewed (PDF), downloaded, or imported into a Unity Catalog volume |
+| Email vs Excel | Every email is read by the model, matched to its row in the log, and each field is marked Correct, Different, Missing in Excel, Missing in email, or Missing in both |
 
-## What it does
-- **Ingests** the Excel logs (Lakeflow Connect for SharePoint), the planner data (Lakeflow Connect for Dynamics 365, via an Azure Synapse Link export), a mailbox (Lakeflow Connect for Outlook, a Beta connector) and Fabric tables (OneLake federation, read in place).
-- **Keeps bad cells from breaking the load.** Bronze keeps every cell as text. Cells that can't be read as a number or date go to a quarantine table instead of failing the run.
-- **Joins** buy-in activity with buy-out and planner data into one row per scheme (silver), with thin gold tables and metric views so a rate such as "SLA breach rate" is defined once.
-- **Reads emails and attachments.** `ai_query` turns an email into a record. `ai_parse_document` reads PDF, Word and image attachments, and a small function reads Excel attachments.
-- **Puts a person in the loop** through two small apps (Node.js and Streamlit) where someone confirms an email's value, rejects it, or imports an attachment into a Unity Catalog volume. Every decision is stored with who and when.
+Corrections, review decisions and imports are stored as new rows with who and when. The Excel files themselves are never changed.
 
-## How the email-to-Excel check works
-This is the "Email vs Excel" page in the Node app (`compareAll` in `app_buyin_node/server.js`).
-
-1. **Excel side.** The workbooks are copied from SharePoint into `bronze_buyin_log`. The view `silver_buyin_log` types them (bad cells become empty; the originals stay in `buyin_quarantine`) and layers on any correction made in the app.
-2. **Email side.** The Outlook pipeline lands the mailbox. The view `outlook_inbox` keeps the Inbox and turns HTML into text. For each email the app asks `ai_query` for a record: scheme, trustee (from the signature), members, notified date, received date, confidence and a note. It must leave a field empty if the email doesn't say. The result is cached per app process.
-3. **Matching.** The app finds the log rows with the same scheme. With a notification date in the email it takes the row with that date; without one it takes the scheme's only pending row, or its only row. Otherwise the email stays unmatched.
-4. **Field checks.** Members are compared as numbers, dates as text, trustee names ignoring case and punctuation, and an attached Excel's row count against the member count in the email.
+## How the email-versus-Excel check works
+1. For each email, the server asks `ai_query` (`databricks-gpt-oss-120b`) for a record: scheme, trustee (from the signature), members, notified date, received date, confidence and a note. The model must leave a field empty if the email does not say. The result is cached per server process. Code lowers confidence when a number is hedged ("around 300") and caps it at medium when a key field is missing.
+2. It finds the rows in `silver_buyin_log` with the same scheme. With a notification date in the email it takes the row with that date. Without one it takes the scheme's only pending row, or its only row. Otherwise the email stays unmatched.
+3. Members are compared as numbers, dates as text, trustee names ignoring case and punctuation, and an attached Excel's row count against the member count in the email.
 
 | Email has it | Log has it | Result |
 |---|---|---|
@@ -28,25 +26,33 @@ This is the "Email vs Excel" page in the Node app (`compareAll` in `app_buyin_no
 | No | Yes | Missing in email |
 | No | No | Missing in both |
 
-Things to know: the log side includes corrections made in the app, so accepting an email's value turns that field Correct. The model can word things differently between runs. Dates are compared as the model wrote them. The Excel copy is only as fresh as the last pipeline run, and no schedule is set.
+Notes: the log side includes corrections made in this app, so accepting an email's value turns that field Correct. The model can word things differently between runs. Dates are compared as the model wrote them.
 
-## Repository layout
-| Path | What it is |
+## What it expects in your workspace
+The app does not create any data. It reads and writes tables in `bpa_edp.demo` (set by `SCHEMA` at the top of `server.js`) and expects these to exist:
+
+| Object | Used for |
 |---|---|
-| `sql/` | Tables and views: bronze, quarantine, silver, gold, metric views, corrections, inbound email and attachment layers |
-| `scripts/` | Python helpers that create pipelines, load sample data, deploy the apps and rehearse changes. `run_sql.py`, `wsapi.py` and `q.py` are the shared helpers |
-| `app_buyin_node/` | Node.js app with no npm dependencies: Home, Fix invalid cells, Review emails, Inbound emails, Email vs Excel |
-| `app_buyin/` | The Streamlit version of the first three pages |
-| `app/` | An earlier pricing-assumptions app |
-| `dashboard/` | Scripts that build the AI/BI dashboards |
-| `connectors/` | An untested Lakeflow Connect pipeline definition |
-| `buyin/`, `docs/`, `sample_emails/` | Synthetic Excel logs, scheme documents, and sample emails with attachments |
-| `architecture/` | The target-architecture diagram |
-| `SETUP.md` | Build order and configuration |
-| `POWER_AUTOMATE_FLOW.md` | An optional flow that saves emails to SharePoint |
+| `silver_buyin_log`, `buyin_quarantine` | The Excel log as loaded, and the cells that could not be read |
+| `email_suggestions`, `email_extracted` | Emails already matched to log entries |
+| `inbound_emails` | The email list: id, sender, subject, body, source, attachments JSON, attachment text |
+| `outlook_inbox` | The Outlook table with its attachments (the app reads attachment bytes from here) |
+| `mv_buyin_sla` | A metric view with `entries`, `breach_rate_pct` and `pending_items` |
+| `buyin_corrections` (written) | One row per correction: log id, column, value, action, source, who, when |
+| `inbound_email_review` (written), `inbound_email_latest` | Review decisions, and a view of the latest one per email |
+| `inbound_attachment_import` (written) | An audit row for each imported attachment |
+| Volume `bpa_edp.demo.inbound_attachments` | Where imported attachments are written |
 
-## Before you run anything
-Identifiers in this repository have been replaced with placeholders (`YOUR-TENANT`, `YOUR-SITE`, `YOUR_WAREHOUSE_ID`, `<SANDBOX_TENANT_ID>` and similar). Replace them with your own values. Scripts read credentials from `~/.bpa-edp/`, which is outside the repository; nothing secret is stored here. Several scripts assume the repository is checked out at `~/bpa-edp-demo`.
+It also calls the model endpoint `databricks-gpt-oss-120b` and runs SQL on the warehouse named in `app.yaml`. The column names the queries use are in `server.js`; the SQL that builds these objects is not part of this repository.
 
-## Status
-Built and exercised against a real workspace with scripted tests and a headless browser render. The apps have not been through a formal browser test suite. A clean rebuild of the whole chain from this repository has not been re-run end to end, so expect to fix small things. The Outlook connector is in Beta, and Fabric and Dynamics 365 need their own environments.
+## Run and deploy
+- **Deploy:** put your warehouse id in `app.yaml`, then create and deploy a Databricks App from this folder (`databricks apps create` / `databricks apps deploy`, or the workspace UI). Give the app's service principal `USE CATALOG`, `USE SCHEMA`, `SELECT` on the objects above, `MODIFY` on the three tables it writes, `READ VOLUME` and `WRITE VOLUME` on the volume, and `CAN_USE` on the warehouse.
+- **Sign-in:** Databricks Apps supplies `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`. The signed-in user comes from the `X-Forwarded-Email` header.
+- **Local:** `TEST_TOKEN=<workspace token> DATABRICKS_HOST=<host> WAREHOUSE_ID=<id> PORT=8000 node server.js`. Node 20 or later.
+- **Logo (optional):** put a `logo.png` in `public/` and it shows in the top bar. Without one the bar shows the text "Buy-in operations".
+
+## Design and safety notes
+- The browser only names things (a log id, a message id). The server re-reads the target, validates the value again, and uses bound SQL parameters.
+- Email text is added to the page as text nodes only, and a content-security-policy header blocks inline scripts.
+- Attachments are previewed inline only if they are really PDFs. Imports are limited to document types and 20 MB.
+- Checked with scripted API tests, a fake-DOM click-through and a headless render, and scanned with the Impeccable design detector. It has not been through a formal browser test suite.
