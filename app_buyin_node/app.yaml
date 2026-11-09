@@ -1,0 +1,4 @@
+command: ["node", "server.js"]
+env:
+  - name: WAREHOUSE_ID
+    value: "YOUR_WAREHOUSE_ID"

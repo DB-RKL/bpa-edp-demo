@@ -1,0 +1,51 @@
+# Lakeflow Connect pipeline definitions for the real sources.
+# STATUS: written from the public docs, NOT deployed and NOT tested. This demo's Azure
+# tenants have no Dynamics 365 / SharePoint, so the synthetic OneLake tables and the
+# scheme_docs volume stand in for them. To go live: create the two Unity Catalog
+# connections (Catalog > Create > Connection), set the names below, and run
+#   databricks bundle deploy
+# Dynamics 365 reads Dataverse via Azure Synapse Link (ADLS Gen2 export), so the customer
+# needs the export container configured first.
+resources:
+  pipelines:
+    bpa_d365_ingestion:
+      name: bpa_d365_ingestion
+      catalog: bpa_edp
+      schema: demo
+      ingestion_definition:
+        connection_name: d365_connection          # UC connection of type Dynamics 365
+        objects:
+          - table:
+              source_schema: objects
+              source_table: account
+              destination_catalog: bpa_edp
+              destination_schema: demo
+              destination_table: d365_account
+              scd_type: SCD_TYPE_1
+          - table:
+              source_schema: objects
+              source_table: opportunity
+              destination_catalog: bpa_edp
+              destination_schema: demo
+              destination_table: d365_opportunity
+              scd_type: SCD_TYPE_1
+
+    bpa_sharepoint_files:
+      name: bpa_sharepoint_files
+      catalog: bpa_edp
+      schema: demo
+      channel: PREVIEW
+      ingestion_definition:
+        connection_name: sharepoint_connection    # UC connection of type SharePoint
+        objects:
+          - table:
+              destination_catalog: bpa_edp
+              destination_schema: demo
+              destination_table: sharepoint_scheme_files
+              connector_options:
+                sharepoint_options:
+                  entity_type: FILE
+                  url: https://<tenant>.sharepoint.com/sites/<bpa-site>
+                  file_ingestion_options:
+                    format: BINARYFILE
+                    schema_evolution_mode: NONE

@@ -1,0 +1,9 @@
+{
+  "name": "bpa-buyin-editor-node",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Buy-in operations: Node.js version of the buy-in editor (no dependencies)",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=20" }
+}

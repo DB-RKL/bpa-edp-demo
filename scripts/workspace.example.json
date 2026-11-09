@@ -1,0 +1,4 @@
+{
+  "host": "https://adb-0000000000000000.0.azuredatabricks.net",
+  "warehouse_id": "YOUR_WAREHOUSE_ID"
+}

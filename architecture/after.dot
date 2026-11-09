@@ -1,0 +1,48 @@
+digraph after {
+  rankdir=LR; fontname="Helvetica"; labelloc=t; fontsize=20; nodesep=0.45; ranksep=0.8; pad=0.4
+  label="AFTER: buy-in and buyout data brought together in Databricks"
+  node [fontname="Helvetica", shape=box, style="rounded,filled", fillcolor="#FFFFFF", color="#5A6F77", fontsize=12]
+  edge [fontname="Helvetica", fontsize=10, color="#5A6F77"]
+
+  subgraph cluster_src { label="Sources"; style="rounded,dashed"; color="#999999"; fontsize=13
+    admin [label="Administration / buyout data\n(stand-in tables in the demo)", style="rounded,filled,dashed"]
+    email [label="Trustee emails\n(mailbox log)"]
+    xls   [label="SharePoint\nExcel buy-in logs", fillcolor="#FFF3CD"]
+    dv    [label="Dynamics 365 / Dataverse\n(planner data)"]
+    fab   [label="Fabric buy-in lakehouse\n(Dataverse tables, SharePoint\nshortcut files)"]
+  }
+  subgraph cluster_ing { label="Ingestion"; style="rounded,dashed"; color="#999999"; fontsize=13
+    lfcsp [label="Lakeflow Connect\nSharePoint", fillcolor="#E6F4EA"]
+    lfcd  [label="Lakeflow Connect\nDynamics 365\n(needs Synapse Link export)", style="rounded,filled,dashed"]
+    olk   [label="OneLake federation\n(read in place, no copy;\none connection per Fabric workspace)", fillcolor="#E6F4EA"]
+    ai    [label="ai_query extracts fields\nstaff review and confirm", style="rounded,filled,dashed"]
+  }
+  subgraph cluster_uc { label="Databricks + Unity Catalog (permissions, lineage, Delta history for audit)"; style="rounded"; color="#FF3621"; fontsize=13
+    br [label="Bronze\nraw landing zone\n(everything kept as text)", fillcolor="#FDE4E0"]
+    q  [label="Quarantine table\nbad cells for ops to fix", style="rounded,filled,dashed", fillcolor="#FDE4E0"]
+    si [label="Silver\ntyped, SLA / lateness recalculated,\njoined with admin + planner", style="rounded,filled,dashed", fillcolor="#FDE4E0"]
+    go [label="Gold\nminimal aggregates", style="rounded,filled,dashed", fillcolor="#FDE4E0"]
+  }
+  subgraph cluster_out { label="Consumers"; style="rounded,dashed"; color="#999999"; fontsize=13
+    lv  [label="AI/BI dashboards + Genie"]
+    app [label="Review apps\n(confirm, reject, audit)"]
+    pbi [label="Power BI / Power Platform\nDirectQuery on SQL warehouse", style="rounded,filled,dashed"]
+  }
+
+  admin -> br [style=dashed]
+  xls -> lfcsp -> br
+  email -> ai -> br
+  dv -> lfcd -> br
+  fab -> olk -> br
+  br -> si
+  br -> q [style=dashed, label="invalid values"]
+  si -> go
+  go -> lv
+  go -> pbi
+  go -> app [dir=both]
+  
+  legend [shape=plaintext, style="", label=<
+   <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+   <TR><TD>Design sketch of the target flow.</TD></TR>
+   <TR><TD>See the README for what is built and what is not.</TD></TR></TABLE>>]
+}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>BPA pricing assumptions</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:24px;color:#1b3139;background:#f9f7f4}
+h1{font-size:20px;margin:0 0 4px} .sub{color:#5a6f77;margin-bottom:16px;font-size:13px}
+table{border-collapse:collapse;width:100%;background:#fff;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid #e4e0d9;text-align:right;white-space:nowrap}
+th{background:#eee8df;position:sticky;top:0} td:first-child,th:first-child{text-align:left}
+input{width:70px;padding:4px} input.note{width:160px;text-align:left}
+button{background:#ff3621;color:#fff;border:0;padding:5px 12px;cursor:pointer;border-radius:3px}
+.ov{background:#fff3cd} #msg{margin:10px 0;min-height:18px;font-size:13px}
+</style></head><body>
+<h1>BPA pricing assumptions</h1>
+<div class="sub">Scheme terms are extracted from the scheme rules documents. An override is saved to Unity Catalog and appears in the dashboard and Genie space straight away. Synthetic data.</div>
+<div id="msg"></div>
+<table id="t"><thead><tr><th>Scheme</th><th>Liability GBP m</th><th>Longevity</th><th>Document discount %</th><th>Current discount %</th><th>Expense %</th><th>Benchmark premium %</th><th>Indicative premium GBP m</th><th>Opps</th><th>New discount %</th><th>New expense %</th><th>Note</th><th></th></tr></thead><tbody></tbody></table>
+<script>
+const f=(v,d=1)=>v==null?'':Number(v).toFixed(d);
+async function load(){
+  const r=await fetch('/api/schemes'); const rows=await r.json(); const tb=document.querySelector('tbody'); tb.innerHTML='';
+  for(const s of rows){
+    const tr=document.createElement('tr'); if(String(s.has_override)==='true') tr.className='ov';
+    tr.innerHTML=`<td>${s.scheme_name}</td><td>${f(s.liability_gbp_m)}</td><td>${s.longevity_basis||''}</td><td>${f(s.doc_discount_rate_pct,2)}</td><td>${f(s.discount_rate_pct,2)}</td><td>${f(s.expense_loading_pct,2)}</td><td>${f(s.benchmark_premium_pct)}</td><td><b>${f(s.indicative_premium_gbp_m)}</b></td><td>${s.opportunities}</td>
+    <td><input class="d" type="number" step="0.01"></td><td><input class="e" type="number" step="0.01"></td><td><input class="note" maxlength="500" placeholder="reason"></td><td><button>Save</button></td>`;
+    tr.querySelector('button').onclick=async()=>{
+      const d=tr.querySelector('.d').value, e=tr.querySelector('.e').value;
+      if(d===''&&e===''){msg('Enter a discount rate or an expense loading first.');return;}
+      const res=await fetch('/api/override',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountid:s.accountid,discount_rate_override_pct:d===''?null:+d,expense_loading_override_pct:e===''?null:+e,note:tr.querySelector('.note').value})});
+      const j=await res.json(); msg(res.ok?`Saved for ${s.scheme_name} by ${j.updated_by}.`:(j.error||'Save failed')); if(res.ok) load();
+    };
+    tb.appendChild(tr);
+  }
+}
+function msg(t){document.getElementById('msg').textContent=t}
+load();
+</script></body></html>

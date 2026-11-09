@@ -1,0 +1,6 @@
+command: ["streamlit", "run", "app.py"]
+env:
+  - name: WAREHOUSE_ID
+    value: "YOUR_WAREHOUSE_ID"
+  - name: STREAMLIT_GATHER_USAGE_STATS
+    value: "false"
